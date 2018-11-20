@@ -5,8 +5,18 @@ var keys = require('../keys');
 
 function getGIO(address, cb) {
     fetch(`https://api.geocod.io/v1.3/geocode?api_key=${keys.geocodio}&q=${address}`)
-        .then(res => res.json())
-        .then(res => cb(false, res))
+        .then(res => new Promise((resolve) => {
+            if(res.status !== 200)
+                resolve(false);
+            else
+                resolve(res.json());
+        }))
+        .then(res => {
+            if(res)
+                cb(false, res);
+            else
+                cb("Error retrieving data from GeoCode API");
+        })
         .catch(err => cb(err));
 }
 
@@ -16,21 +26,45 @@ function getRestaurants(location, cb) {
             'user-key': keys.zomato
         }
     })
-        .then(res => res.json())
-        .then(res => cb(false, res))
+        .then(res => new Promise((resolve) => {
+          if(res.status !== 200)
+            resolve(false);
+          else
+            resolve(res.json());
+        }))
+        .then(res => {
+          if(res)
+            cb(false, res);
+          else
+            cb("Error retrieving data from Zomato API");
+        })
         .catch(err => cb(err));
 }
 
 router.get('/', function(req, res, next) {
   var { address } = req.query;
 
-  if(!address) res.send("No address provided");
+  if(!address) return res.status(400).send("No address provided");
 
   getGIO(address, (err, data) => {
-      if(err) return res.send("Error getting geocode: " + err);
+      if(err) return res.status(500).send("Error getting geocode: " + err);
       getRestaurants(data.results[0].location, (err, data) => {
-          if(err) return res.send("Error retrieving restaurants " + err);
-          res.send(data);
+          if(err) {
+            res.status(500);
+            return res.status(500).send("Error retrieving restaurants " + err);
+          }
+
+          var restaurants = [];
+          data.nearby_restaurants.forEach((rest) => {
+              var restaurant = rest.restaurant;
+              restaurants.push({
+                  name: restaurant.name,
+                  address: restaurant.location.address,
+                  cuisines: restaurant.cuisines,
+                  rating: restaurant.user_rating.aggregate_rating
+              })
+          });
+          res.json({restaurants: restaurants});
       });
   });
 });
